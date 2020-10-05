@@ -72,7 +72,7 @@ public class TopicRepository extends AbstractRepository {
         Collection<TopicListing> listTopics = kafkaWrapper.listTopics(clusterId);
 
         for (TopicListing item : listTopics) {
-            if (isSearchMatch(search, item.name()) && isListViewMatch(view, item.name()) && isTopicMatchRegex(
+            if (isSearchMatch(search, item.name()) && isListViewMatch(view, item.name()) && isMatchRegex(
                 getTopicFilterRegex(), item.name())) {
                 list.add(item.name());
             }
@@ -102,7 +102,7 @@ public class TopicRepository extends AbstractRepository {
 
     public Topic findByName(String clusterId, String name, boolean skipConsumerGroups) throws ExecutionException, InterruptedException {
         Optional<Topic> topic = Optional.empty();
-        if(isTopicMatchRegex(getTopicFilterRegex(),name)) {
+        if(isMatchRegex(getTopicFilterRegex(),name)) {
             topic = this.findByName(clusterId, Collections.singletonList(name), skipConsumerGroups).stream().findFirst();
         }
 
@@ -122,7 +122,7 @@ public class TopicRepository extends AbstractRepository {
         Optional<List<String>> topicRegex = getTopicFilterRegex();
 
         for (Map.Entry<String, TopicDescription> description : topicDescriptions) {
-            if(isTopicMatchRegex(topicRegex, description.getValue().name())){
+            if(isMatchRegex(topicRegex, description.getValue().name())){
                 list.add(
                     new Topic(
                         description.getValue(),
@@ -162,33 +162,8 @@ public class TopicRepository extends AbstractRepository {
     }
 
     private Optional<List<String>> getTopicFilterRegex() {
-
-        List<String> topicFilterRegex = new ArrayList<>();
-
-        if (applicationContext.containsBean(SecurityService.class)) {
-            SecurityService securityService = applicationContext.getBean(SecurityService.class);
-            Optional<Authentication> authentication = securityService.getAuthentication();
-            if (authentication.isPresent()) {
-                Authentication auth = authentication.get();
-                topicFilterRegex.addAll(getTopicFilterRegexFromAttributes(auth.getAttributes()));
-            }
-        }
-        // get topic filter regex for default groups
-        topicFilterRegex.addAll(getTopicFilterRegexFromAttributes(
-            userGroupUtils.getUserAttributes(Collections.singletonList(securityProperties.getDefaultGroup()))
-        ));
-
-        return Optional.of(topicFilterRegex);
+        return userGroupUtils.getFilterRegex("topics-filter-regexp");
     }
 
-    @SuppressWarnings("unchecked")
-    private List<String> getTopicFilterRegexFromAttributes(Map<String, Object> attributes) {
-        if (attributes.get("topics-filter-regexp") != null) {
-            if (attributes.get("topics-filter-regexp") instanceof List) {
-                return (List<String>)attributes.get("topics-filter-regexp");
-            }
-        }
-        return new ArrayList<>();
-    }
 
 }

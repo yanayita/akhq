@@ -134,7 +134,7 @@ public class GroupController extends AbstractController {
     @Delete("{groupName}")
     @Operation(tags = {"consumer group"}, summary = "Delete a consumer group")
     public HttpResponse<?> delete(String cluster, String groupName) throws ExecutionException, InterruptedException {
-        this.kafkaWrapper.deleteConsumerGroups(cluster, groupName);
+        consumerGroupRepository.deleteConsumerGroup(cluster, groupName);
 
         return HttpResponse.noContent();
     }

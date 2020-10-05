@@ -1,6 +1,9 @@
 package org.akhq.utils;
 
+import io.micronaut.context.ApplicationContext;
 import io.micronaut.core.util.StringUtils;
+import io.micronaut.security.authentication.Authentication;
+import io.micronaut.security.utils.SecurityService;
 import org.akhq.configs.GroupMapping;
 import org.akhq.configs.SecurityProperties;
 import org.akhq.configs.UserMapping;
@@ -16,6 +19,9 @@ public class UserGroupUtils {
 
     @Inject
     private SecurityProperties securityProperties;
+
+    @Inject
+    private ApplicationContext applicationContext;
 
     /**
      * Get all distinct roles for the list of groups
@@ -89,5 +95,34 @@ public class UserGroupUtils {
                 ),
                 defaultGroupStream
         ).distinct().collect(Collectors.toList());
+    }
+
+    public Optional<List<String>> getFilterRegex(String key) {
+        List<String> filterRegex = new ArrayList<>();
+
+        if (applicationContext.containsBean(SecurityService.class)) {
+            SecurityService securityService = applicationContext.getBean(SecurityService.class);
+            Optional<Authentication> authentication = securityService.getAuthentication();
+            if (authentication.isPresent()) {
+                Authentication auth = authentication.get();
+                filterRegex.addAll(getValueFromAttributes(auth.getAttributes(), key));
+            }
+        }
+        // get topic filter regex for default groups
+        filterRegex.addAll(getValueFromAttributes(
+                getUserAttributes(Collections.singletonList(securityProperties.getDefaultGroup())), key
+        ));
+
+        return Optional.of(filterRegex);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> getValueFromAttributes(Map<String, Object> attributes, String key) {
+        if (attributes.get(key) != null) {
+            if (attributes.get(key) instanceof List) {
+                return (List<String>)attributes.get(key);
+            }
+        }
+        return new ArrayList<>();
     }
 }

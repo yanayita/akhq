@@ -1,5 +1,6 @@
 package org.akhq.repositories;
 
+import org.akhq.utils.UserGroupUtils;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.ConsumerGroupListing;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -28,6 +29,9 @@ public class ConsumerGroupRepository extends AbstractRepository {
     @Inject
     private KafkaModule kafkaModule;
 
+    @Inject
+    private UserGroupUtils userGroupUtils;
+
     public PagedList<ConsumerGroup> list(String clusterId, Pagination pagination, Optional<String> search) throws ExecutionException, InterruptedException {
         return PagedList.of(all(clusterId, search), pagination, groupsList -> this.findByName(clusterId, groupsList));
     }
@@ -36,19 +40,20 @@ public class ConsumerGroupRepository extends AbstractRepository {
         ArrayList<String> list = new ArrayList<>();
 
         for (ConsumerGroupListing item : kafkaWrapper.listConsumerGroups(clusterId)) {
-            if (isSearchMatch(search, item.groupId())) {
+            if (isSearchMatch(search, item.groupId()) && isMatchRegex(getConsumerGroupFilterRegex(), item.groupId())) {
                 list.add(item.groupId());
             }
         }
-
         list.sort(Comparator.comparing(String::toLowerCase));
 
         return list;
     }
 
     public ConsumerGroup findByName(String clusterId, String name) throws ExecutionException, InterruptedException {
-        Optional<ConsumerGroup> consumerGroup = this.findByName(clusterId, Collections.singletonList(name)).stream().findFirst();
-
+        Optional<ConsumerGroup> consumerGroup = Optional.empty();
+        if(isMatchRegex(getConsumerGroupFilterRegex(), name)) {
+            consumerGroup = this.findByName(clusterId, Collections.singletonList(name)).stream().findFirst();
+        }
         return consumerGroup.orElseThrow(() -> new NoSuchElementException("Consumer Group '" + name + "' doesn't exist"));
     }
 
@@ -56,6 +61,7 @@ public class ConsumerGroupRepository extends AbstractRepository {
         Map<String, ConsumerGroupDescription> consumerDescriptions = kafkaWrapper.describeConsumerGroups(clusterId, groups);
 
         Map<String, Map<TopicPartition, OffsetAndMetadata>> groupGroupsOffsets = consumerDescriptions.keySet().stream()
+            .filter(value -> isMatchRegex(getConsumerGroupFilterRegex(), value))
             .map(group -> {
                 try {
                     return new AbstractMap.SimpleEntry<>(group, kafkaWrapper.consumerGroupsOffsets(clusterId, group));
@@ -104,6 +110,9 @@ public class ConsumerGroupRepository extends AbstractRepository {
     }
 
     public void updateOffsets(String clusterId, String name, Map<org.akhq.models.TopicPartition, Long> offset) {
+        if (!isMatchRegex(getConsumerGroupFilterRegex(), name)){
+            return;
+        }
         KafkaConsumer<byte[], byte[]> consumer = kafkaModule.getConsumer(clusterId, new Properties() {{
             put(ConsumerConfig.GROUP_ID_CONFIG, name);
         }});
@@ -121,5 +130,16 @@ public class ConsumerGroupRepository extends AbstractRepository {
         consumer.close();
 
         kafkaWrapper.clearConsumerGroupsOffsets();
+    }
+
+    public void deleteConsumerGroup(String clusterId, String groupName) throws ExecutionException {
+        if (!isMatchRegex(getConsumerGroupFilterRegex(), groupName)){
+            return;
+        }
+        kafkaWrapper.deleteConsumerGroups(clusterId, groupName);
+    }
+
+    private Optional<List<String>> getConsumerGroupFilterRegex() {
+        return userGroupUtils.getFilterRegex("consumer-groups-filter-regexp");
     }
 }
